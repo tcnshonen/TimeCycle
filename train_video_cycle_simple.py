@@ -21,6 +21,8 @@ def info(type, value, tb):
 
 sys.excepthook = info
 
+from comet_ml import Experiment as CometExperiment
+
 import argparse
 import os
 import shutil
@@ -45,8 +47,6 @@ import models.videos.model_simple as models
 from utils import Logger, AverageMeter, mkdir_p, savefig
 
 import models.dataset.vlog_train as vlog
-
-from comet_ml import Experiment as CometExperiment
 
 params = {}
 params['filelist'] = '/misc/kcgscratch1/ChoGroup/resnick/spaceofmotion/VLOG/vlog_train.txt'
@@ -157,6 +157,17 @@ if use_cuda:
 
 best_loss = 0  # best test accuracy
 
+comet_exp = CometExperiment(
+    api_key="hIXq6lDzWzz24zgKv7RYz6blo",
+    project_name="supercyclecons",
+    workspace="cinjon",
+    auto_metric_logging=False,
+    auto_output_logging=None,
+    auto_param_logging=False)
+
+comet_exp.log_parameters(vars(args))
+comet_exp.set_name('TimeCycle')
+
 def partial_load(pretrained_dict, model):
     model_dict = model.state_dict()
 
@@ -251,6 +262,8 @@ def set_bn_eval(m):
       m.eval()
 
 def train(train_loader, model, criterion, optimizer, epoch, use_cuda, args):
+    comet_exp.log_current_epoch(epoch)
+
     # switch to train mode
     model.train()
     # model.apply(set_bn_eval)
@@ -339,6 +352,15 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda, args):
                     outstr=outstr
                     )
             print(outstr)
+
+
+        with comet_exp.train():
+            comet_exp.log_metric('loss_targ_theta', sum(loss_targ_theta).data / len(loss_targ_theta))
+            comet_exp.log_metric('loss_targ_theta_temp', sum(loss_targ_theta).data / len(loss_targ_theta) * args.lambda)
+            comet_exp.log_metric('loss_back_inliers', sum(loss_back_inliers).data / len(loss_back_inliers))
+            comet_exp.log_metric('loss_targ_theta_skip', loss_targ_theta_skip[0].data)
+            comet_exp.log_metric('loss_targ_theta_skip_temp', loss_targ_theta_skip[0].data * self.lambda)
+            comet_exp.log_metric('temperature', args.lamda)
 
 
 
