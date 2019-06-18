@@ -356,10 +356,10 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda, args):
 
         with comet_exp.train():
             comet_exp.log_metric('loss_targ_theta', sum(loss_targ_theta).data / len(loss_targ_theta))
-            comet_exp.log_metric('loss_targ_theta_temp', sum(loss_targ_theta).data / len(loss_targ_theta) * args.lambda)
+            comet_exp.log_metric('loss_targ_theta_temp', sum(loss_targ_theta).data / len(loss_targ_theta) * args.lamda)
             comet_exp.log_metric('loss_back_inliers', sum(loss_back_inliers).data / len(loss_back_inliers))
             comet_exp.log_metric('loss_targ_theta_skip', loss_targ_theta_skip[0].data)
-            comet_exp.log_metric('loss_targ_theta_skip_temp', loss_targ_theta_skip[0].data * self.lambda)
+            comet_exp.log_metric('loss_targ_theta_skip_temp', loss_targ_theta_skip[0].data * self.lamda)
             comet_exp.log_metric('temperature', args.lamda)
 
 
