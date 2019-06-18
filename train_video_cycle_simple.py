@@ -46,6 +46,8 @@ from utils import Logger, AverageMeter, mkdir_p, savefig
 
 import models.dataset.vlog_train as vlog
 
+from comet_ml import Experiment as CometExperiment
+
 params = {}
 params['filelist'] = '/misc/kcgscratch1/ChoGroup/resnick/spaceofmotion/VLOG/vlog_train.txt'
 params['imgSize'] = 256
@@ -80,7 +82,7 @@ parser.add_argument('--momentum', default=0.5, type=float, metavar='M',
 parser.add_argument('--weight-decay', '--wd', default=0.0, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
 # Checkpoints
-parser.add_argument('-c', '--checkpoint', default='/scratch/xiaolonw/pytorch_checkpoints/CycleTime/', type=str, metavar='PATH',
+parser.add_argument('-c', '--checkpoint', default='/misc/kcgscratch1/ChoGroup/resnick/spaceofmotion/zeping/', type=str, metavar='PATH',
                     help='path to save checkpoint (default: checkpoint)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
