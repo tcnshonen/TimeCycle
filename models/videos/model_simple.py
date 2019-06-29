@@ -25,7 +25,7 @@ import sys
 
 class CycleTime(nn.Module):
 
-    def __init__(self, class_num=8, dim_in=2048, trans_param_num=3, detach_network=False, pretrained=True, temporal_out=4, T=None, hist=1):
+    def __init__(self, class_num=8, dim_in=2048, trans_param_num=3, detach_network=False, pretrained=True, temporal_out=4, T=None, hist=1, use_cuda=True):
         super(CycleTime, self).__init__()
 
         dim = 512
@@ -40,19 +40,21 @@ class CycleTime(nn.Module):
         self.T = self.div_num**-.5 if T is None else T
         print('self.T:', self.T)
 
-        self.afterconv1 = nn.Conv3d(1024, 512, kernel_size=1, bias=False)
+        self.use_cuda = use_cuda
+
+        self.spatial_conv = nn.Conv3d(1024, 512, kernel_size=1, bias=False)
 
         self.spatial_out1 = 30
         self.spatial_out2 = 10
         self.temporal_out = temporal_out
 
-        self.afterconv3_trans = nn.Conv2d(self.spatial_out1 * self.spatial_out1, 128, kernel_size=4, padding=0, bias=False)
-        self.afterconv4_trans = nn.Conv2d(128, 64, kernel_size=4, padding=0, bias=False)
+        self.localizer_conv1 = nn.Conv2d(self.spatial_out1 * self.spatial_out1, 128, kernel_size=4, padding=0, bias=False)
+        self.localizer_conv2 = nn.Conv2d(128, 64, kernel_size=4, padding=0, bias=False)
 
         corrdim = 64 * 4 * 4
         corrdim_trans = 64 * 4 * 4
 
-        self.linear2 = nn.Linear(corrdim_trans, trans_param_num)
+        self.localizer_linear = nn.Linear(corrdim_trans, trans_param_num)
 
         self.leakyrelu = nn.LeakyReLU(0.1, inplace=True)
         self.relu = nn.ReLU(inplace=True)
@@ -64,9 +66,9 @@ class CycleTime(nn.Module):
 
         # initialization
 
-        nn.init.kaiming_normal_(self.afterconv1.weight, mode='fan_out', nonlinearity='relu')
-        nn.init.kaiming_normal_(self.afterconv3_trans.weight, mode='fan_out', nonlinearity='relu')
-        nn.init.kaiming_normal_(self.afterconv4_trans.weight, mode='fan_out', nonlinearity='relu')
+        nn.init.kaiming_normal_(self.spatial_conv.weight, mode='fan_out', nonlinearity='relu')
+        nn.init.kaiming_normal_(self.localizer_conv1.weight, mode='fan_out', nonlinearity='relu')
+        nn.init.kaiming_normal_(self.localizer_conv2.weight, mode='fan_out', nonlinearity='relu')
 
         # assuming no fc pre-training
         for m in self.modules():
@@ -86,8 +88,8 @@ class CycleTime(nn.Module):
         xs = np.stack(xs, 2)
         self.xs = xs
 
-        self.criterion_inlier = WeakInlierCountPool(geometric_model='affine', tps_grid_size=3, tps_reg_factor=0.2, h_matches=30, w_matches=30, use_conv_filter=False, dilation_filter=0, normalize_inlier_count=True)
-        self.criterion_synth  = TransformedGridLoss(use_cuda=True, geometric_model='affine')
+        self.criterion_inlier = WeakInlierCountPool(use_cuda=self.use_cuda, geometric_model='affine', tps_grid_size=3, tps_reg_factor=0.2, h_matches=30, w_matches=30, use_conv_filter=False, dilation_filter=0, normalize_inlier_count=True)
+        self.criterion_synth  = TransformedGridLoss(use_cuda=self.use_cuda, geometric_model='affine')
 
 
     def compute_corr_softmax(self, patch_feat1, r50_feat2, detach_corrfeat=False):
@@ -166,7 +168,7 @@ class CycleTime(nn.Module):
         if self.detach_network and can_detach:
             x_pre = x_pre.detach()
 
-        x = self.afterconv1(x_pre)
+        x = self.spatial_conv(x_pre)
         x = self.relu(x)
 
         if contiguous:
@@ -184,13 +186,13 @@ class CycleTime(nn.Module):
 
         # 2. predict transform with affinity as input
         corrfeat_mat = corrfeat.view(corrfeat.size(0) * temporal_out, self.spatial_out1 * self.spatial_out1, self.spatial_out2, self.spatial_out2)
-        corrfeat_trans  = self.afterconv3_trans(corrfeat_mat)
+        corrfeat_trans  = self.localizer_conv1(corrfeat_mat)
         corrfeat_trans  = self.leakyrelu(corrfeat_trans)
-        corrfeat_trans  = self.afterconv4_trans(corrfeat_trans)
+        corrfeat_trans  = self.localizer_conv2(corrfeat_trans)
         corrfeat_trans  = self.leakyrelu(corrfeat_trans)
         corrfeat_trans  = corrfeat_trans.view(corrfeat_trans.shape[0], -1)
 
-        trans_theta = self.linear2(corrfeat_trans).contiguous().view(corrfeat_trans.shape[0], 3)
+        trans_theta = self.localizer_linear(corrfeat_trans).contiguous().view(corrfeat_trans.shape[0], 3)
         trans_theta = self.transform_trans_out(trans_theta)
 
         return corrfeat, corrfeat_mat, corrfeat_trans, trans_theta
@@ -232,14 +234,14 @@ class CycleTime(nn.Module):
             r50_feat1_transform_norm = F.normalize(r50_feat1_transform_ori, p=2, dim=1)
             corrfeat_trans_matrix_reverse = self.compute_corr_softmax2(img_feat2_norm, r50_feat1_transform_norm)
 
-            corrfeat_trans_reverse  = self.afterconv3_trans(corrfeat_trans_matrix_reverse)
+            corrfeat_trans_reverse  = self.localizer_conv1(corrfeat_trans_matrix_reverse)
             corrfeat_trans_reverse  = self.leakyrelu(corrfeat_trans_reverse)
-            corrfeat_trans_reverse  = self.afterconv4_trans(corrfeat_trans_reverse)
+            corrfeat_trans_reverse  = self.localizer_conv2(corrfeat_trans_reverse)
             corrfeat_trans_reverse  = self.leakyrelu(corrfeat_trans_reverse)
             corrfeat_trans_reverse  = corrfeat_trans_reverse.contiguous()
             corrfeat_trans_reverse  = corrfeat_trans_reverse.view(bs2, -1)
 
-            trans_out3  = self.linear2(corrfeat_trans_reverse)
+            trans_out3  = self.localizer_linear(corrfeat_trans_reverse)
             trans_out3  = trans_out3.contiguous()
             trans_out3  = self.transform_trans_out(trans_out3)
 
@@ -308,7 +310,6 @@ class CycleTime(nn.Module):
             forw_trans_thetas, forw_trans_feats = \
                 recurrent_align(F.normalize(back_trans_feats[-1], p=2, dim=1), list(range(T))[T-TT+1:])
 
-
             # cycle back from last base frame to target
             last_ = forw_trans_feats[-1] if len(forw_trans_feats) > 0 else back_trans_feats[0]
             last_corrfeat, last_corrfeat_mat, last_corrfeat_trans, last_trans_theta = self.compute_transform_img_to_patch(
@@ -317,6 +318,8 @@ class CycleTime(nn.Module):
             last_trans_feat_norm = F.normalize(last_trans_feat, p=2, dim=1)
 
             forw_trans_thetas.append(last_trans_theta)
+
+            #print(patch_feat2_norm)
 
             return back_trans_thetas, forw_trans_thetas, back_trans_feats
 
