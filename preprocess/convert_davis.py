@@ -1,18 +1,22 @@
+import argparse
+from joblib import delayed, Parallel
 import os
-import numpy as np
-import scipy.misc
-import cv2
+import subprocess
+import time
 
+import cv2
+import numpy as np
 from PIL import Image
+import scipy.misc
+
 
 jpglist = []
 
-import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('-o', '--out_folder', default='/scratch/xiaolonw/davis_results/', type=str)
 parser.add_argument('-i', '--in_folder', default='/scratch/xiaolonw/davis_results_mask_sep/', type=str)
 parser.add_argument('-d', '--dataset', default='/scratch/xiaolonw/davis/', type=str)
-
+parser.add_argument('--parallel', dest='parallel', action='store_true')
 args = parser.parse_args()
 
 annotations_folder = args.dataset + 'DAVIS/Annotations/480p/'
@@ -44,14 +48,15 @@ palette = palette.astype(np.uint8)
 
 topk = 9
 
-for i in range(len(jpglist)):
-
-    fname = jpglist[i]
+def convert_wrapper(inp):
+    fname, i = inp
+    start = time.time()
+    
     gtfolder = annotations_folder + fname + '/'
     outfolder = out_folder + fname + '/'
 
     if not os.path.exists(outfolder):
-        os.mkdir(outfolder, 0755 )
+        os.mkdir(outfolder, mode=0o755)
 
     files = os.listdir(gtfolder)
 
@@ -66,8 +71,10 @@ for i in range(len(jpglist)):
     lblimg = lblimg.convert('P')
     lblimg.save(outfolder + "{:05d}.png".format(0), format='PNG')
 
+    start_fs = time.time()
     for j in range(len(files) - 1):
-
+        if j % 10 == 0:
+            print('On %d / %d : ' % (j, len(files)-1), time.time() - start_fs)
         outname = outfolder + "{:05d}.png".format(j + 1)
         inname  = current_folder + str(i) + '_' + str(j + topk) + '_mask.png'
         lblimg  = scipy.misc.imread(inname)
@@ -95,3 +102,12 @@ for i in range(len(jpglist)):
 
 
         # scipy.misc.imsave(outname, np.uint8(lblimg))
+
+
+if __name__ == '__main__':
+    if args.parallel:
+        convert_status_list = Parallel(n_jobs=30)(
+            delayed(convert_wrapper)([l, i]) for i, l in enumerate(jpglist))
+    else:
+        for i in range(len(jpglist)):
+            convert_wrapper(jpglist[i])
