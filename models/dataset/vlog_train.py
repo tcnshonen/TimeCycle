@@ -22,8 +22,11 @@ import torchvision.transforms as transforms
 
 class VlogSet(data.Dataset):
     def __init__(self, params, is_train=True, frame_gap=1, augment=['crop', 'flip', 'frame_gap']):
-
-        self.filelist = params['filelist']
+        if is_train:
+            self.filelist = params['vlog_train']
+        else:
+            raise
+        
         self.batchSize = params['batchSize']
         self.imgSize = params['imgSize']
         self.cropSize = params['cropSize']
@@ -52,6 +55,7 @@ class VlogSet(data.Dataset):
 
             self.jpgfiles.append(jpgfile)
             self.fnums.append(fnum)
+        print(params['manualSeed'], list(zip(self.jpgfiles[:4], self.fnums[:4])))
 
         f.close()
         self.geometricTnf = GeometricTnf('affine', out_h=params['cropSize2'], out_w=params['cropSize2'], use_cuda = False)
@@ -127,9 +131,17 @@ class VlogSet(data.Dataset):
             # img_path = folder_path + "{:02d}.jpg".format(nowid)
             # specialized for fouhey format
             newid = nowid + 1
+            if 'checkpoint' in folder_path:
+                # data on fair is 0-indexed
+                newid -= 1
+                
             img_path = folder_path + "{:06d}.jpg".format(newid)
 
-            img = load_image(img_path)  # CxHxW
+            try:
+                img = load_image(img_path)  # CxHxW
+            except Exception as e:
+                print("Failed to load from %s" % img_path, flush=True)
+                raise
 
             ht, wd = img.size(1), img.size(2)
             if ht <= wd:
@@ -140,7 +152,6 @@ class VlogSet(data.Dataset):
                 ratio  = float(ht) / float(wd)
                 # width, height
                 img = resize(img, self.imgSize, int(self.imgSize * ratio))
-
 
             if crop_offset_x == -1:
                 crop_offset_x = random.randint(0, img.size(2) - self.cropSize - 1)
@@ -170,9 +181,19 @@ class VlogSet(data.Dataset):
             newid = int(future_idx + 1 + i * frame_gap)
             if newid > fnum:
                 newid = fnum
+                
+            if 'checkpoint' in folder_path:
+                # data on fair is 0-indexed
+                newid -= 1
+                
             img_path = folder_path + "{:06d}.jpg".format(newid)
 
-            img = load_image(img_path)  # CxHxW
+            try:
+                img = load_image(img_path)  # CxHxW
+            except Exception as e:
+                print("Failed to load from %s" % img_path, flush=True)
+                raise
+            
             ht, wd = img.size(1), img.size(2)
             newh, neww = ht, wd
             if ht <= wd:
